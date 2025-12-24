@@ -1,0 +1,24 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.14
+
+  build:
+    commands:
+      - cd services/task-api
+      - zip -r ../../task-api.zip .
+      - cd ../event-processor
+      - zip -r ../../event-processor.zip .
+      - cd ../../
+
+  post_build:
+    commands:
+      - aws lambda update-function-code --function-name edtm-v2-task-api --zip-file fileb://task-api.zip
+      - aws lambda update-function-code --function-name edtm-v2-event-processor --zip-file fileb://event-processor.zip
+
+artifacts:
+  files:
+    - task-api.zip
+    - event-processor.zip

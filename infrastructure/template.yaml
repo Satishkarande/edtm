@@ -1,0 +1,90 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Event-Driven Task Manager v2 - Phase 1
+  Core infrastructure (DynamoDB, SQS, DLQ).
+  No compute resources to avoid loops.
+
+Parameters:
+  ProjectPrefix:
+    Type: String
+    Default: edtm-v2
+    Description: Resource name prefix for isolation
+
+Resources:
+
+  # -------------------------
+  # DynamoDB: Tasks Table
+  # -------------------------
+  TasksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${ProjectPrefix}-tasks"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: taskId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: taskId
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+
+  # -------------------------
+  # DynamoDB: Metadata Table
+  # -------------------------
+  MetadataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${ProjectPrefix}-metadata"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: executionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: executionId
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+
+  # -------------------------
+  # SQS: Dead Letter Queue
+  # -------------------------
+  EventsDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${ProjectPrefix}-events-dlq"
+      MessageRetentionPeriod: 345600   # 4 days
+
+  # -------------------------
+  # SQS: Main Events Queue
+  # -------------------------
+  EventsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${ProjectPrefix}-events-queue"
+      VisibilityTimeout: 60
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt EventsDLQ.Arn
+        maxReceiveCount: 3
+
+Outputs:
+
+  TasksTableName:
+    Description: DynamoDB Tasks table name
+    Value: !Ref TasksTable
+
+  MetadataTableName:
+    Description: DynamoDB Metadata table name
+    Value: !Ref MetadataTable
+
+  EventsQueueUrl:
+    Description: SQS Events queue URL
+    Value: !Ref EventsQueue
+
+  EventsQueueArn:
+    Description: SQS Events queue ARN
+    Value: !GetAtt EventsQueue.Arn
+
+  EventsDLQArn:
+    Description: SQS Dead Letter Queue ARN
+    Value: !GetAtt EventsDLQ.Arn
