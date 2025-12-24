@@ -4,61 +4,20 @@ phases:
   install:
     runtime-versions:
       python: 3.11
-version: 0.2
-
-phases:
-  install:
-    runtime-versions:
-      python: 3.11
 
   build:
     commands:
       - echo "Deploying to ENV=$ENV"
-      - echo "Zipping task-api lambda"
       - cd services/task-api
       - zip -r ../../task-api.zip .
       - cd ../event-processor
-      - echo "Zipping event-processor lambda"
       - zip -r ../../event-processor.zip .
       - cd ../../
 
   post_build:
     commands:
-      - echo "Updating Lambda functions for $ENV"
-      - aws lambda update-function-configuration --function-name edtm-v2-$ENV-task-api --environment Variables="{ENV=$ENV}"
       - aws lambda update-function-code --function-name edtm-v2-$ENV-task-api --zip-file fileb://task-api.zip
       - aws lambda update-function-code --function-name edtm-v2-$ENV-event-processor --zip-file fileb://event-processor.zip
-
-artifacts:
-  files:
-    - task-api.zip
-    - event-processor.zip
-  build:
-    commands:
-      - echo "Deploying to ENV=$ENV"
-      - echo "Zipping task-api lambda"
-      - cd services/task-api
-      - zip -r ../../task-api.zip .
-      - cd ../event-processor
-      - echo "Zipping event-processor lambda"
-      - zip -r ../../event-processor.zip .
-      - cd ../../
-
-  post_build:
-    commands:
-      - echo "Updating Lambda functions for $ENV"
-
-      - aws lambda update-function-configuration \
-          --function-name edtm-v2-$ENV-task-api \
-          --environment Variables="{ENV=$ENV}"
-
-      - aws lambda update-function-code \
-          --function-name edtm-v2-$ENV-task-api \
-          --zip-file fileb://task-api.zip
-
-      - aws lambda update-function-code \
-          --function-name edtm-v2-$ENV-event-processor \
-          --zip-file fileb://event-processor.zip
 
 artifacts:
   files:
