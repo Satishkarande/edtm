@@ -17,7 +17,7 @@ def lambda_handler(event, context):
         if body.get("eventType") != "TASK_CREATED":
             print("Ignoring event:", body)
             continue
-        #log line for CICD Pipe line
+        #log line for CICD Pipe line test 1
 
         sfn.start_execution(
             stateMachineArn=WORKFLOW_ARN,
