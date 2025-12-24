@@ -5,22 +5,9 @@ phases:
     runtime-versions:
       python: 3.11
 
-  pre_build:
-    commands:
-      - echo "Detecting branch..."
-      - |
-        if [[ "$CODEBUILD_SOURCE_VERSION" == "refs/heads/dev" ]]; then
-          export ENV=dev
-        elif [[ "$CODEBUILD_SOURCE_VERSION" == "refs/heads/main" ]]; then
-          export ENV=prod
-        else
-          echo "Unknown branch: $CODEBUILD_SOURCE_VERSION"
-          exit 1
-        fi
-      - echo "Deploying to ENV=$ENV"
-
   build:
     commands:
+      - echo "Deploying to ENV=$ENV"
       - echo "Zipping task-api lambda"
       - cd services/task-api
       - zip -r ../../task-api.zip .
