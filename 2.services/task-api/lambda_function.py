@@ -25,10 +25,10 @@ def lambda_handler(event, context):
     try:
         body = json.loads(event.get("body", "{}"))
 
-        task_id = body.get("taskId") or str(uuid.uuid4())
+        task_ID = body.get("taskId") or str(uuid.uuid4())
 
         item = {
-            "taskId": task_id,
+            "taskId": task_ID,
             "status": "CREATED"
         }
 
@@ -38,13 +38,13 @@ def lambda_handler(event, context):
             QueueUrl=QUEUE_URL,
             MessageBody=json.dumps({
                 "eventType": "TASK_CREATED",
-                "taskId": task_id
+                "taskId": task_ID
             })
         )
 
         return response(201, {
             "message": "Task created",
-            "taskId": task_id
+            "taskId": task_ID
         })
 
     except Exception as e:

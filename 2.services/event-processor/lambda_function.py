@@ -16,6 +16,6 @@ def lambda_handler(event, context):
         sfn.start_execution(
             stateMachineArn=WORKFLOW_ARN,
             input=json.dumps({
-                "taskId": body["taskId"]
+                "taskID": body["taskID"]
             })
         )
