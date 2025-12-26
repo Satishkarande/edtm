@@ -1,41 +1,57 @@
-import json, os, boto3
-ssm = boto3.client('ssm')
-ddb = boto3.client('dynamodb')
-sqs = boto3.client('sqs')
+import json
+import os
+import boto3
+from datetime import datetime
 
-def get_param(name):
-    return ssm.get_parameter(Name=name)['Parameter']['Value']
+dynamodb = boto3.resource("dynamodb")
+sqs = boto3.client("sqs")
 
-TASKS_TABLE = get_param('/edtm-v2/tasks_table')
-EVENTS_QUEUE_URL = get_param('/edtm-v2/events_queue_url')
+TABLE_NAME = os.environ.get("TASKS_TABLE")
+QUEUE_URL = os.environ.get("EVENTS_QUEUE_URL")
 
-def response(code, body):
-    return {"statusCode": code, "headers": {"Content-Type": "application/json"}, "body": json.dumps(body)}
+table = dynamodb.Table(TABLE_NAME)
+
+
+def response(status, body):
+    return {
+        "statusCode": status,
+        "headers": {
+            "Content-Type": "application/json"
+        },
+        "body": json.dumps(body)
+    }
+
 
 def lambda_handler(event, context):
-    method = event.get('requestContext', {}).get('http', {}).get('method')
-    if method == 'POST':
-        body = json.loads(event['body'])
+    try:
+        body = json.loads(event.get("body", "{}"))
 
-        # 1) Save task (sync)
-        ddb.put_item(
-            TableName=TASKS_TABLE,
-            Item={
-                "taskId": {"S": body["taskId"]},
-                "title": {"S": body.get("title","")},
-                "status": {"S": body.get("status","CREATED")}
-            }
-        )
+        if "taskId" not in body:
+            return response(400, {"error": "taskId is required"})
 
-        # 2) Publish event (async)
+        item = {
+            "taskId": body["taskId"],
+            "status": body.get("status", "CREATED"),
+            "createdAt": datetime.utcnow().isoformat()
+        }
+
+        # 1️⃣ Save task to DynamoDB
+        table.put_item(Item=item)
+
+        # 2️⃣ Publish event to SQS
         sqs.send_message(
-            QueueUrl=EVENTS_QUEUE_URL,
+            QueueUrl=QUEUE_URL,
             MessageBody=json.dumps({
                 "eventType": "TASK_CREATED",
                 "taskId": body["taskId"]
             })
         )
-#1234566
-        return response(201, {"message":"Task created"})
 
-    return response(400, {"error":"Unsupported"})
+        return response(201, {
+            "message": "Task created",
+            "taskId": body["taskId"]
+        })
+
+    except Exception as e:
+        print("ERROR:", str(e))
+        return response(500, {"error": "Internal Server Error"})

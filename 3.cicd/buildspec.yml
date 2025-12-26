@@ -7,17 +7,19 @@ phases:
 
   build:
     commands:
-      - echo "Deploying to ENV=$ENV"
-      - cd services/task-api
+      - echo "Zipping task-api lambda"
+      - cd 2.services/task-api
       - zip -r ../../task-api.zip .
       - cd ../event-processor
+      - echo "Zipping event-processor lambda"
       - zip -r ../../event-processor.zip .
-      - cd ../../
+      - cd ../..
 
   post_build:
     commands:
-      - aws lambda update-function-code --function-name edtm-v2-$ENV-task-api --zip-file fileb://task-api.zip
-      - aws lambda update-function-code --function-name edtm-v2-$ENV-event-processor --zip-file fileb://event-processor.zip
+      - echo "Updating Lambda functions"
+      - aws lambda update-function-code --function-name edtm-task-api --zip-file fileb://task-api.zip
+      - aws lambda update-function-code --function-name edtm-event-processor --zip-file fileb://event-processor.zip
 
 artifacts:
   files:

@@ -1,30 +1,30 @@
 import json
+import os
 import boto3
 
-ssm = boto3.client('ssm')
-sfn = boto3.client('stepfunctions')
+stepfunctions = boto3.client("stepfunctions")
 
-def get_param(name):
-    return ssm.get_parameter(Name=name)['Parameter']['Value']
+STATE_MACHINE_ARN = os.environ.get("WORKFLOW_ARN")
 
-WORKFLOW_ARN = get_param('/edtm-v2/workflow_arn')
 
 def lambda_handler(event, context):
-    for record in event['Records']:
-        body = json.loads(record['body'])
+    for record in event["Records"]:
+        body = json.loads(record["body"])
 
-        # Loop guard: process only known events
+        # Safety check (prevents loops)
         if body.get("eventType") != "TASK_CREATED":
             print("Ignoring event:", body)
             continue
-        #log line for CICD Pipe line test
 
-        sfn.start_execution(
-            stateMachineArn=WORKFLOW_ARN,
+        task_id = body["taskId"]
+
+        # Start Step Function workflow
+        stepfunctions.start_execution(
+            stateMachineArn=STATE_MACHINE_ARN,
             input=json.dumps({
-                "taskId": body["taskId"],
-                "source": "edtm-v2"
+                "taskId": task_id,
+                "source": "edtm-backend"
             })
         )
-#1234S6785
-        print("Workflow started for task:", body["taskId"])
+
+        print(f"Workflow started for task {task_id}")
