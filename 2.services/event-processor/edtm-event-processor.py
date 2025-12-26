@@ -26,5 +26,5 @@ def lambda_handler(event, context):
                 "source": "edtm-backend"
             })
         )
-
+#12
         print(f"Workflow started for task {task_id}")

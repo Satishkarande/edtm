@@ -51,7 +51,7 @@ def lambda_handler(event, context):
             "message": "Task created",
             "taskId": body["taskId"]
         })
-
+#12S
     except Exception as e:
         print("ERROR:", str(e))
         return response(500, {"error": "Internal Server Error"})
