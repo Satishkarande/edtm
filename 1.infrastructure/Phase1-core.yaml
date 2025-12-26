@@ -1,0 +1,211 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Phase 2.3 - Core Backend with API + DynamoDB + SQS (Event Driven Task Manager)
+
+Resources:
+
+  # -------------------------
+  # DynamoDB
+  # -------------------------
+  TasksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: edtm-tasks-table
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: taskId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: taskId
+          KeyType: HASH
+
+  TasksTableParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /edtm/tasks_table
+      Type: String
+      Value: edtm-tasks-table
+
+  # -------------------------
+  # SQS
+  # -------------------------
+  EventsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: edtm-events-queue
+
+  EventsQueueParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /edtm/events_queue_url
+      Type: String
+      Value: !Ref EventsQueue
+
+  # -------------------------
+  # IAM Roles
+  # -------------------------
+  TaskApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: edtm-task-api-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: task-api-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                Resource: !GetAtt TasksTable.Arn
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource: !GetAtt EventsQueue.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  EventProcessorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: edtm-event-processor-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: event-processor-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  # -------------------------
+  # Lambda Functions
+  # -------------------------
+  TaskApiLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: edtm-task-api
+      Runtime: python3.14
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt TaskApiRole.Arn
+      Code:
+        ZipFile: |
+          import json, boto3, os
+
+          ddb = boto3.client("dynamodb")
+          sqs = boto3.client("sqs")
+
+          TASKS_TABLE = os.environ["TASKS_TABLE"]
+          EVENTS_QUEUE_URL = os.environ["EVENTS_QUEUE_URL"]
+
+          def lambda_handler(event, context):
+              body = json.loads(event.get("body") or "{}")
+              task_id = body.get("taskId", "task-001")
+
+              ddb.put_item(
+                  TableName=TASKS_TABLE,
+                  Item={
+                      "taskId": {"S": task_id},
+                      "status": {"S": "CREATED"}
+                  }
+              )
+
+              sqs.send_message(
+                  QueueUrl=EVENTS_QUEUE_URL,
+                  MessageBody=json.dumps({
+                      "eventType": "TASK_CREATED",
+                      "taskId": task_id
+                  })
+              )
+
+              return {
+                  "statusCode": 201,
+                  "headers": {"Content-Type": "application/json"},
+                  "body": json.dumps({"message": "Task created"})
+              }
+      Environment:
+        Variables:
+          TASKS_TABLE: !Ref TasksTable
+          EVENTS_QUEUE_URL: !Ref EventsQueue
+
+  EventProcessorLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: edtm-event-processor
+      Runtime: python3.14
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt EventProcessorRole.Arn
+      Code:
+        ZipFile: |
+          import json
+
+          def lambda_handler(event, context):
+              for record in event["Records"]:
+                  body = json.loads(record["body"])
+                  print("Processing event:", body)
+
+  # -------------------------
+  # API Gateway (HTTP API)
+  # -------------------------
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: edtm-api
+      ProtocolType: HTTP
+
+  ApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:edtm-task-api
+      PayloadFormatVersion: "2.0"
+
+  ApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "POST /tasks"
+      Target: !Sub integrations/${ApiIntegration}
+
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: dev
+      AutoDeploy: true
+
+  # -------------------------
+  # Lambda Permission for API Gateway
+  # -------------------------
+  ApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: edtm-task-api
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*
+
+Outputs:
+  ApiUrl:
+    Description: HTTP API endpoint
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/dev/tasks
